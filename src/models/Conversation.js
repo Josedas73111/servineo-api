@@ -1,5 +1,7 @@
 // src/models/Conversation.js
 const mongoose = require('mongoose');
+// 1. Importamos moment-timezone para manejar la hora de Bolivia
+const moment = require('moment-timezone');
 
 const conversationSchema = new mongoose.Schema({
   usuario_numero: {
@@ -30,9 +32,27 @@ const conversationSchema = new mongoose.Schema({
     index: true
   }
 }, {
-  collection: 'historial_conversaciones', // Nombre exacto de tu colección
-  timestamps: false, // No usar createdAt/updatedAt porque usas "fecha"
-  versionKey: '__v' // Mantener __v que ya tienes
+  collection: 'historial_conversaciones', 
+  timestamps: false, 
+  versionKey: '__v',
+  // 2. AQUÍ ESTÁ LA MAGIA: Transformamos los datos antes de enviarlos a la API
+  toJSON: {
+    transform: (document, returnedObject) => {
+      // A. Arreglar el ID (quita el $oid)
+      returnedObject.id = returnedObject._id.toString();
+      delete returnedObject._id;
+      
+      // B. Eliminar la versión (__v)
+      delete returnedObject.__v;
+
+      // C. Formatear la fecha a hora de Bolivia (quita el $date)
+      if (returnedObject.fecha) {
+        returnedObject.fecha = moment(returnedObject.fecha)
+          .tz('America/La_Paz')
+          .format('YYYY-MM-DD HH:mm:ss');
+      }
+    }
+  }
 });
 
 // Índices compuestos para búsquedas eficientes
