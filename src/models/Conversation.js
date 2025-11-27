@@ -1,6 +1,4 @@
-// src/models/Conversation.js
 const mongoose = require('mongoose');
-// 1. Importamos moment-timezone para manejar la hora de Bolivia
 const moment = require('moment-timezone');
 
 const conversationSchema = new mongoose.Schema({
@@ -21,42 +19,29 @@ const conversationSchema = new mongoose.Schema({
   tipo_medio: {
     type: String,
     required: [true, 'El tipo de medio es obligatorio'],
-    enum: {
-      values: ['texto', 'audio', 'imagen', 'video'],
-      message: '{VALUE} no es un tipo de medio válido'
-    }
+    enum: ['texto', 'audio', 'imagen', 'video']
   },
+  // CAMBIO CLAVE: Guardamos la fecha directamente como Texto (String)
+  // con la hora de Bolivia ya calculada.
   fecha: {
-    type: Date,
-    default: Date.now,
-    index: true
+    type: String,
+    default: () => moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
   }
 }, {
-  collection: 'historial_conversaciones', 
-  timestamps: false, 
-  versionKey: '__v',
-  // 2. AQUÍ ESTÁ LA MAGIA: Transformamos los datos antes de enviarlos a la API
+  collection: 'historial_conversaciones',
+  timestamps: false,
+  versionKey: false, // Quitamos __v directamente aquí
   toJSON: {
     transform: (document, returnedObject) => {
-      // A. Arreglar el ID (quita el $oid)
+      // Solo arreglamos el ID, la fecha ya vendrá bien
       returnedObject.id = returnedObject._id.toString();
       delete returnedObject._id;
-      
-      // B. Eliminar la versión (__v)
       delete returnedObject.__v;
-
-      // C. Formatear la fecha a hora de Bolivia (quita el $date)
-      if (returnedObject.fecha) {
-        returnedObject.fecha = moment(returnedObject.fecha)
-          .tz('America/La_Paz')
-          .format('YYYY-MM-DD HH:mm:ss');
-      }
     }
   }
 });
 
-// Índices compuestos para búsquedas eficientes
+// Índices
 conversationSchema.index({ usuario_numero: 1, fecha: -1 });
-conversationSchema.index({ tipo_medio: 1, fecha: -1 });
 
 module.exports = mongoose.model('Conversation', conversationSchema);
