@@ -2,13 +2,15 @@
 const Conversation = require('../models/Conversation');
 const moment = require('moment-timezone');
 
-// Crear nueva conversación (guardar historial) - VERSIÓN CORREGIDA
+// ==========================================
+// 1. CREAR CONVERSACIÓN (CORREGIDO PARA IMÁGENES/VIDEO)
+// ==========================================
 const createConversation = async (req, res) => {
   try {
-    // Nota: El middleware ya normalizó 'tipo_medio' a 'texto', 'imagen', etc.
+    // El middleware (validation.js) ya debió normalizar 'tipo_medio' a 'texto', 'imagen', 'video' o 'audio'.
     const tipo_medio = req.body.tipo_medio; 
     
-    // Mensajes por defecto
+    // Mensajes por defecto para cuando n8n envía cadenas vacías o null
     const mensajesPorDefecto = {
       'audio': { usuario: '[Audio recibido]', ia: 'Audio procesado correctamente' },
       'imagen': { usuario: '[Imagen recibida]', ia: 'Imagen recibida correctamente' },
@@ -16,28 +18,32 @@ const createConversation = async (req, res) => {
       'texto': { usuario: 'Mensaje de texto vacío', ia: '' }
     };
 
+    // Seleccionamos los defaults según el tipo de medio actual
     const defaults = mensajesPorDefecto[tipo_medio] || mensajesPorDefecto['texto'];
 
-    // Asegurar que mensaje_usuario no sea undefined ni null
+    // Validación y limpieza de mensaje_usuario
     let mensajeUsuario = req.body.mensaje_usuario;
     if (!mensajeUsuario || typeof mensajeUsuario !== 'string' || mensajeUsuario.trim() === '') {
       mensajeUsuario = defaults.usuario;
     }
 
+    // Validación y limpieza de mensaje_IA
     let mensajeIA = req.body.mensaje_IA;
     if (!mensajeIA || typeof mensajeIA !== 'string' || mensajeIA.trim() === '') {
       mensajeIA = defaults.ia;
     }
 
+    // Construimos el objeto final
     const conversationData = {
-      usuario_numero: req.body.usuario_numero.toString().trim(), // Convertir a string por si acaso
+      usuario_numero: req.body.usuario_numero ? req.body.usuario_numero.toString().trim() : 'Desconocido',
       mensaje_usuario: mensajeUsuario,
       mensaje_IA: mensajeIA,
       tipo_medio: tipo_medio,
+      // Usamos la fecha enviada o la actual de La Paz
       fecha: req.body.fecha || moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
     };
 
-    console.log('📥 Guardando:', JSON.stringify(conversationData, null, 2));
+    console.log('📥 Guardando conversación:', JSON.stringify(conversationData, null, 2));
 
     const conversation = new Conversation(conversationData);
     await conversation.save();
@@ -53,17 +59,17 @@ const createConversation = async (req, res) => {
   } catch (error) {
     console.error('❌ Error CRÍTICO al guardar:', error);
 
-    // Error de Validación de Documento Mongo (Schema Validation en Atlas)
+    // Error específico de Validación de Schema en MongoDB Atlas (Error 121)
     if (error.code === 121) {
       return res.status(400).json({
         success: false,
-        message: 'El documento no cumple con las reglas de validación de la base de datos (Schema Validation).',
-        detail: 'Verifique que tipo_medio sea exactamente: texto, audio, imagen o video.',
+        message: 'Rechazado por base de datos (Schema Validation).',
+        detail: 'Verifica que el campo tipo_medio sea exactamente: texto, audio, imagen o video.',
         error: error.message
       });
     }
     
-    // Error de validación de Mongoose
+    // Errores de validación de Mongoose
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -81,7 +87,9 @@ const createConversation = async (req, res) => {
   }
 };
 
-// Obtener historial de un usuario específico
+// ==========================================
+// 2. OBTENER HISTORIAL DE UN USUARIO
+// ==========================================
 const getUserHistory = async (req, res) => {
   try {
     const { usuario_numero } = req.params;
@@ -94,32 +102,26 @@ const getUserHistory = async (req, res) => {
       page = 1
     } = req.query;
 
-    // Construir filtros
     const filter = { usuario_numero };
 
-    // Filtro por fechas (comparación de strings)
     if (startDate || endDate) {
       filter.fecha = {};
       if (startDate) filter.fecha.$gte = startDate;
       if (endDate) filter.fecha.$lte = endDate;
     }
 
-    // Filtro por tipo de medio
     if (tipo_medio) {
       filter.tipo_medio = tipo_medio.toLowerCase();
     }
 
-    // Calcular skip para paginación
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Obtener conversaciones
     const conversations = await Conversation.find(filter)
       .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
       .limit(parseInt(limit))
       .skip(skip)
-      .lean(); // Mejor rendimiento
+      .lean();
 
-    // Contar total de registros
     const total = await Conversation.countDocuments(filter);
 
     res.status(200).json({
@@ -142,7 +144,9 @@ const getUserHistory = async (req, res) => {
   }
 };
 
-// Obtener todas las conversaciones con filtros
+// ==========================================
+// 3. OBTENER TODAS LAS CONVERSACIONES
+// ==========================================
 const getAllConversations = async (req, res) => {
   try {
     const { 
@@ -156,14 +160,12 @@ const getAllConversations = async (req, res) => {
 
     const filter = {};
 
-    // Filtros por fecha
     if (startDate || endDate) {
       filter.fecha = {};
       if (startDate) filter.fecha.$gte = startDate;
       if (endDate) filter.fecha.$lte = endDate;
     }
 
-    // Filtro por tipo de medio
     if (tipo_medio) {
       filter.tipo_medio = tipo_medio.toLowerCase();
     }
@@ -198,7 +200,9 @@ const getAllConversations = async (req, res) => {
   }
 };
 
-// Obtener estadísticas
+// ==========================================
+// 4. OBTENER ESTADÍSTICAS
+// ==========================================
 const getStats = async (req, res) => {
   try {
     const { usuario_numero } = req.params;
@@ -217,7 +221,6 @@ const getStats = async (req, res) => {
 
     const total = await Conversation.countDocuments(filter);
 
-    // Obtener conversación más reciente
     const lastConversation = await Conversation.findOne(filter)
       .sort({ fecha: -1 })
       .lean();
@@ -240,6 +243,9 @@ const getStats = async (req, res) => {
   }
 };
 
+// ==========================================
+// EXPORTACIÓN DE MÓDULOS
+// ==========================================
 module.exports = {
   createConversation,
   getUserHistory,
