@@ -1,12 +1,38 @@
 // src/middlewares/validation.js
 
-// Validar datos de conversación antes de guardar
 const validateConversationData = (req, res, next) => {
-  const { usuario_numero, tipo_medio, fecha } = req.body;
+  let { usuario_numero, tipo_medio, fecha } = req.body;
   const errors = [];
 
-  // Campos OBLIGATORIOS según las rules de MongoDB
-  if (!usuario_numero || usuario_numero.trim() === '') {
+  // 1. Normalización y Mapeo de Tipos (Inglés/Variaciones -> Español Estricto)
+  // Esto soluciona el problema si n8n envía 'image' en lugar de 'imagen'
+  if (tipo_medio) {
+    const rawType = tipo_medio.toLowerCase().trim();
+    
+    const typeMapping = {
+      'image': 'imagen',
+      'photo': 'imagen',
+      'foto': 'imagen',
+      'text': 'texto',
+      'voice': 'audio',
+      'ptt': 'audio',
+      'sticker': 'imagen', // Guardamos stickers como imágenes
+      'document': 'texto'  // Guardamos docs como referencia de texto
+    };
+
+    // Si existe en el mapa, lo reemplazamos por el valor correcto
+    if (typeMapping[rawType]) {
+      req.body.tipo_medio = typeMapping[rawType];
+      tipo_medio = req.body.tipo_medio; // Actualizamos variable local
+    } else {
+      // Si no está en el mapa, solo aseguramos minúsculas
+      req.body.tipo_medio = rawType;
+      tipo_medio = rawType;
+    }
+  }
+
+  // 2. Validaciones Obligatorias
+  if (!usuario_numero || usuario_numero.toString().trim() === '') {
     errors.push('El número de usuario es obligatorio');
   }
 
@@ -14,76 +40,38 @@ const validateConversationData = (req, res, next) => {
     errors.push('El tipo de medio es obligatorio');
   }
 
-  // fecha es obligatoria pero tiene default, así que solo validamos si viene
-  if (fecha && fecha.trim() === '') {
-    errors.push('La fecha no puede estar vacía');
-  }
-
-  // Validar tipo de medio (debe ser EXACTAMENTE uno de estos valores)
+  // 3. Validación Estricta final (contra los valores permitidos por Mongo)
   const validMediaTypes = ['texto', 'audio', 'imagen', 'video'];
-  if (tipo_medio && !validMediaTypes.includes(tipo_medio.toLowerCase())) {
-    errors.push(`El tipo de medio debe ser exactamente uno de: ${validMediaTypes.join(', ')}`);
+  if (tipo_medio && !validMediaTypes.includes(tipo_medio)) {
+    errors.push(`El tipo de medio '${tipo_medio}' no es válido. Debe ser: ${validMediaTypes.join(', ')}`);
   }
 
-  // Validar formato de número de teléfono (opcional pero recomendado)
-  if (usuario_numero && !/^\+?\d{10,15}$/.test(usuario_numero.replace(/\s/g, ''))) {
-    console.warn(`⚠️ Formato de número sospechoso: ${usuario_numero}`);
-  }
-
-  // IMPORTANTE: mensaje_usuario y mensaje_IA son opcionales
-  // Si vienen vacíos o undefined, se manejan en el controlador
-
-  // Si hay errores, retornar respuesta de error
+  // Si hay errores, detener y responder
   if (errors.length > 0) {
+    console.error('❌ Error de validación en request:', errors, req.body);
     return res.status(400).json({
       success: false,
-      message: 'Error de validación',
+      message: 'Error de validación de datos',
       errors: errors
     });
-  }
-
-  // Normalizar tipo_medio a minúsculas
-  if (tipo_medio) {
-    req.body.tipo_medio = tipo_medio.toLowerCase();
   }
 
   next();
 };
 
-// Validar parámetros de consulta
 const validateQueryParams = (req, res, next) => {
   const { startDate, endDate, tipo_medio, sortOrder } = req.query;
 
-  // Validar formato de fechas si se proporcionan
   if (startDate && isNaN(Date.parse(startDate))) {
-    return res.status(400).json({
-      success: false,
-      message: 'Formato de fecha inicial inválido. Use formato: YYYY-MM-DD'
-    });
+    return res.status(400).json({ success: false, message: 'Formato de fecha inicial inválido (YYYY-MM-DD)' });
   }
 
   if (endDate && isNaN(Date.parse(endDate))) {
-    return res.status(400).json({
-      success: false,
-      message: 'Formato de fecha final inválido. Use formato: YYYY-MM-DD'
-    });
+    return res.status(400).json({ success: false, message: 'Formato de fecha final inválido (YYYY-MM-DD)' });
   }
 
-  // Validar tipo de medio si se proporciona
-  const validMediaTypes = ['texto', 'audio', 'imagen', 'video'];
-  if (tipo_medio && !validMediaTypes.includes(tipo_medio.toLowerCase())) {
-    return res.status(400).json({
-      success: false,
-      message: `El tipo de medio debe ser exactamente uno de: ${validMediaTypes.join(', ')}`
-    });
-  }
-
-  // Validar orden de clasificación
   if (sortOrder && !['asc', 'desc'].includes(sortOrder.toLowerCase())) {
-    return res.status(400).json({
-      success: false,
-      message: 'El orden debe ser "asc" o "desc"'
-    });
+    return res.status(400).json({ success: false, message: 'El orden debe ser "asc" o "desc"' });
   }
 
   next();
