@@ -1,19 +1,25 @@
 // src/controllers/conversationController.js
 const Conversation = require('../models/Conversation');
+const moment = require('moment-timezone');
 
 // Crear nueva conversación (guardar historial)
 const createConversation = async (req, res) => {
   try {
+    // Preparar datos según el schema de MongoDB
     const conversationData = {
       usuario_numero: req.body.usuario_numero.trim(),
-      mensaje_usuario: req.body.mensaje_usuario.trim(),
-      mensaje_IA: req.body.mensaje_IA.trim(),
+      mensaje_usuario: req.body.mensaje_usuario ? req.body.mensaje_usuario.trim() : '',
+      mensaje_IA: req.body.mensaje_IA ? req.body.mensaje_IA.trim() : '',
       tipo_medio: req.body.tipo_medio.toLowerCase(),
-      fecha: req.body.fecha || new Date()
+      fecha: req.body.fecha || moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
     };
+
+    console.log('📥 Intentando guardar conversación:', conversationData);
 
     const conversation = new Conversation(conversationData);
     await conversation.save();
+
+    console.log('✅ Conversación guardada exitosamente');
 
     res.status(201).json({
       success: true,
@@ -21,7 +27,18 @@ const createConversation = async (req, res) => {
       data: conversation
     });
   } catch (error) {
-    console.error('Error al guardar conversación:', error);
+    console.error('❌ Error al guardar conversación:', error);
+    
+    // Manejar errores de validación de MongoDB
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Error de validación',
+        errors: errors
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error al guardar la conversación',
@@ -46,11 +63,11 @@ const getUserHistory = async (req, res) => {
     // Construir filtros
     const filter = { usuario_numero };
 
-    // Filtro por fechas
+    // Filtro por fechas (comparación de strings)
     if (startDate || endDate) {
       filter.fecha = {};
-      if (startDate) filter.fecha.$gte = new Date(startDate);
-      if (endDate) filter.fecha.$lte = new Date(endDate);
+      if (startDate) filter.fecha.$gte = startDate;
+      if (endDate) filter.fecha.$lte = endDate;
     }
 
     // Filtro por tipo de medio
@@ -65,7 +82,8 @@ const getUserHistory = async (req, res) => {
     const conversations = await Conversation.find(filter)
       .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
       .limit(parseInt(limit))
-      .skip(skip);
+      .skip(skip)
+      .lean(); // Mejor rendimiento
 
     // Contar total de registros
     const total = await Conversation.countDocuments(filter);
@@ -81,7 +99,7 @@ const getUserHistory = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error al obtener historial:', error);
+    console.error('❌ Error al obtener historial:', error);
     res.status(500).json({
       success: false,
       message: 'Error al obtener el historial',
@@ -104,13 +122,14 @@ const getAllConversations = async (req, res) => {
 
     const filter = {};
 
-    // Filtros
+    // Filtros por fecha
     if (startDate || endDate) {
       filter.fecha = {};
-      if (startDate) filter.fecha.$gte = new Date(startDate);
-      if (endDate) filter.fecha.$lte = new Date(endDate);
+      if (startDate) filter.fecha.$gte = startDate;
+      if (endDate) filter.fecha.$lte = endDate;
     }
 
+    // Filtro por tipo de medio
     if (tipo_medio) {
       filter.tipo_medio = tipo_medio.toLowerCase();
     }
@@ -120,7 +139,8 @@ const getAllConversations = async (req, res) => {
     const conversations = await Conversation.find(filter)
       .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
       .limit(parseInt(limit))
-      .skip(skip);
+      .skip(skip)
+      .lean();
 
     const total = await Conversation.countDocuments(filter);
 
@@ -135,7 +155,7 @@ const getAllConversations = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error al obtener conversaciones:', error);
+    console.error('❌ Error al obtener conversaciones:', error);
     res.status(500).json({
       success: false,
       message: 'Error al obtener las conversaciones',
@@ -163,15 +183,21 @@ const getStats = async (req, res) => {
 
     const total = await Conversation.countDocuments(filter);
 
+    // Obtener conversación más reciente
+    const lastConversation = await Conversation.findOne(filter)
+      .sort({ fecha: -1 })
+      .lean();
+
     res.status(200).json({
       success: true,
       data: {
         total,
-        byMediaType: stats
+        byMediaType: stats,
+        lastConversation: lastConversation ? lastConversation.fecha : null
       }
     });
   } catch (error) {
-    console.error('Error al obtener estadísticas:', error);
+    console.error('❌ Error al obtener estadísticas:', error);
     res.status(500).json({
       success: false,
       message: 'Error al obtener estadísticas',

@@ -10,13 +10,13 @@ connectDB();
 // Iniciar servidor
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`
-  ╔════════════════════════════════════════╗
-  ║   🚀 Servidor Servineo API activo     ║
-  ║   📡 Puerto: ${PORT}                      ║
-  ║   🌍 Entorno: ${process.env.NODE_ENV || 'development'}        ║
-  ║   📝 Local: http://localhost:${PORT}       ║
-  ║   🌐 Red: http://0.0.0.0:${PORT}           ║
-  ╚════════════════════════════════════════╝
+  ╔═══════════════════════════════════════════════════════╗
+  ║   🚀 Servidor Servineo API activo                     ║
+  ║   📡 Puerto: ${PORT}                                   ║
+  ║   🌍 Entorno: ${process.env.NODE_ENV || 'development'} ║
+  ║   📝 Local: http://localhost:${PORT}                   ║
+  ║   🌐 Red: http://0.0.0.0:${PORT}                       ║
+  ╚════════════════════════════════════════════════════════╝
   `);
 });
 
