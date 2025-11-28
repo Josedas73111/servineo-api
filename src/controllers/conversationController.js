@@ -2,7 +2,7 @@
 const Conversation = require('../models/Conversation');
 const moment = require('moment-timezone');
 
-// Crear nueva conversación (guardar historial)
+// Crear nueva conversación (guardar historial) - VERSIÓN CORREGIDA
 const createConversation = async (req, res) => {
   try {
     // Nota: El middleware ya normalizó 'tipo_medio' a 'texto', 'imagen', etc.
@@ -81,11 +81,167 @@ const createConversation = async (req, res) => {
   }
 };
 
-// ... (MANTENER EL RESTO DE FUNCIONES getUserHistory, getAllConversations, etc. IGUAL QUE ANTES) ...
+// Obtener historial de un usuario específico
+const getUserHistory = async (req, res) => {
+  try {
+    const { usuario_numero } = req.params;
+    const { 
+      startDate, 
+      endDate, 
+      tipo_medio, 
+      sortOrder = 'desc',
+      limit = 100,
+      page = 1
+    } = req.query;
+
+    // Construir filtros
+    const filter = { usuario_numero };
+
+    // Filtro por fechas (comparación de strings)
+    if (startDate || endDate) {
+      filter.fecha = {};
+      if (startDate) filter.fecha.$gte = startDate;
+      if (endDate) filter.fecha.$lte = endDate;
+    }
+
+    // Filtro por tipo de medio
+    if (tipo_medio) {
+      filter.tipo_medio = tipo_medio.toLowerCase();
+    }
+
+    // Calcular skip para paginación
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Obtener conversaciones
+    const conversations = await Conversation.find(filter)
+      .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
+      .limit(parseInt(limit))
+      .skip(skip)
+      .lean(); // Mejor rendimiento
+
+    // Contar total de registros
+    const total = await Conversation.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: conversations,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener historial:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener el historial',
+      error: error.message
+    });
+  }
+};
+
+// Obtener todas las conversaciones con filtros
+const getAllConversations = async (req, res) => {
+  try {
+    const { 
+      startDate, 
+      endDate, 
+      tipo_medio, 
+      sortOrder = 'desc',
+      limit = 100,
+      page = 1
+    } = req.query;
+
+    const filter = {};
+
+    // Filtros por fecha
+    if (startDate || endDate) {
+      filter.fecha = {};
+      if (startDate) filter.fecha.$gte = startDate;
+      if (endDate) filter.fecha.$lte = endDate;
+    }
+
+    // Filtro por tipo de medio
+    if (tipo_medio) {
+      filter.tipo_medio = tipo_medio.toLowerCase();
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const conversations = await Conversation.find(filter)
+      .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
+      .limit(parseInt(limit))
+      .skip(skip)
+      .lean();
+
+    const total = await Conversation.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: conversations,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener conversaciones:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener las conversaciones',
+      error: error.message
+    });
+  }
+};
+
+// Obtener estadísticas
+const getStats = async (req, res) => {
+  try {
+    const { usuario_numero } = req.params;
+    
+    const filter = usuario_numero ? { usuario_numero } : {};
+
+    const stats = await Conversation.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$tipo_medio',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const total = await Conversation.countDocuments(filter);
+
+    // Obtener conversación más reciente
+    const lastConversation = await Conversation.findOne(filter)
+      .sort({ fecha: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        total,
+        byMediaType: stats,
+        lastConversation: lastConversation ? lastConversation.fecha : null
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener estadísticas:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener estadísticas',
+      error: error.message
+    });
+  }
+};
 
 module.exports = {
   createConversation,
-  // ... exportar las otras funciones también
   getUserHistory,
   getAllConversations,
   getStats
