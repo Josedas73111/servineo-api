@@ -23,22 +23,24 @@ const conversationSchema = new mongoose.Schema({
     required: [true, 'El tipo de medio es obligatorio'],
     enum: {
       values: ['texto', 'audio', 'imagen', 'video'],
-      message: 'El tipo de medio debe ser exactamente: texto, audio, imagen o video'
-    },
-    lowercase: true // Convierte automáticamente a minúsculas
+      message: '{VALUE} no es un tipo de medio válido'
+    }
   },
+  // CAMBIO CLAVE: Guardamos la fecha directamente como Texto (String)
+  // con la hora de Bolivia ya calculada.
   fecha: {
-    type: String,
-    required: [true, 'La fecha es obligatoria'],
-    default: () => moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
+    type: Date,
+    default: Date.now,
+    index: true
   }
 }, {
-  collection: 'conversaciones_historial',
-  timestamps: false,
-  versionKey: false,
-  strict: true, // Solo permite campos definidos en el schema
+  collection: 'historial_conversaciones', 
+  timestamps: false, 
+  versionKey: '__v',
+  // 2. AQUÍ ESTÁ LA MAGIA: Transformamos los datos antes de enviarlos a la API
   toJSON: {
     transform: (document, returnedObject) => {
+      // A. Arreglar el ID (quita el $oid)
       returnedObject.id = returnedObject._id.toString();
       delete returnedObject._id;
       delete returnedObject.__v;
@@ -46,35 +48,8 @@ const conversationSchema = new mongoose.Schema({
   }
 });
 
-// Índices para mejor rendimiento
+// Índices compuestos para búsquedas eficientes
 conversationSchema.index({ usuario_numero: 1, fecha: -1 });
-conversationSchema.index({ fecha: -1 });
-conversationSchema.index({ tipo_medio: 1 });
-
-// Hook pre-save para logging y validación
-conversationSchema.pre('save', function(next) {
-  const dbName = mongoose.connection.name;
-  const expectedDB = 'Servineo_Database';
-  
-  // Asegurar que tipo_medio esté en minúsculas
-  if (this.tipo_medio) {
-    this.tipo_medio = this.tipo_medio.toLowerCase();
-  }
-  
-  // Validar que tipo_medio sea uno de los valores permitidos
-  const validTypes = ['texto', 'audio', 'imagen', 'video'];
-  if (!validTypes.includes(this.tipo_medio)) {
-    return next(new Error(`Tipo de medio inválido: ${this.tipo_medio}. Debe ser: texto, audio, imagen o video`));
-  }
-  
-  if (dbName !== expectedDB) {
-    console.warn(`⚠️ Guardando en BD "${dbName}" (se esperaba "${expectedDB}")`);
-  }
-  
-  console.log(`💾 Guardando en: ${dbName}.conversaciones_historial`);
-  console.log(`📝 Datos: ${this.usuario_numero} | ${this.tipo_medio} | ${this.fecha}`);
-  
-  next();
-});
+conversationSchema.index({ tipo_medio: 1, fecha: -1 });
 
 module.exports = mongoose.model('Conversation', conversationSchema);
