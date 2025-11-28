@@ -2,7 +2,7 @@
 
 // Validar datos de conversación antes de guardar
 const validateConversationData = (req, res, next) => {
-  const { usuario_numero, mensaje_usuario, mensaje_IA, tipo_medio, fecha } = req.body;
+  const { usuario_numero, tipo_medio, fecha } = req.body;
   const errors = [];
 
   // Campos OBLIGATORIOS según las rules de MongoDB
@@ -29,6 +29,9 @@ const validateConversationData = (req, res, next) => {
   if (usuario_numero && !/^\+?\d{10,15}$/.test(usuario_numero.replace(/\s/g, ''))) {
     console.warn(`⚠️ Formato de número sospechoso: ${usuario_numero}`);
   }
+
+  // IMPORTANTE: mensaje_usuario y mensaje_IA son opcionales
+  // Si vienen vacíos o undefined, se manejan en el controlador
 
   // Si hay errores, retornar respuesta de error
   if (errors.length > 0) {

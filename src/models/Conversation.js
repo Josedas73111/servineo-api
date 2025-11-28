@@ -11,12 +11,30 @@ const conversationSchema = new mongoose.Schema({
   mensaje_usuario: {
     type: String,
     required: false, // No es obligatorio según las rules
-    default: ''
+    default: function() {
+      // Mensaje automático según el tipo de medio si está vacío
+      const tipoTextos = {
+        'audio': '[Audio recibido]',
+        'imagen': '[Imagen recibida]',
+        'video': '[Video recibido]',
+        'texto': ''
+      };
+      return tipoTextos[this.tipo_medio] || '';
+    }
   },
   mensaje_IA: {
     type: String,
     required: false, // No es obligatorio según las rules
-    default: ''
+    default: function() {
+      // Respuesta automática según el tipo de medio si está vacío
+      const tipoRespuestas = {
+        'audio': 'Audio procesado correctamente',
+        'imagen': 'Imagen recibida correctamente',
+        'video': 'Video recibido correctamente',
+        'texto': ''
+      };
+      return tipoRespuestas[this.tipo_medio] || '';
+    }
   },
   tipo_medio: {
     type: String,

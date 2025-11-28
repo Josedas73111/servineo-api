@@ -5,16 +5,50 @@ const moment = require('moment-timezone');
 // Crear nueva conversación (guardar historial)
 const createConversation = async (req, res) => {
   try {
-    // Preparar datos según el schema de MongoDB
+    const tipo_medio = (req.body.tipo_medio || 'texto').toLowerCase();
+    
+    // Mensajes por defecto según tipo de medio cuando vienen vacíos
+    const mensajesPorDefecto = {
+      'audio': {
+        usuario: '[Audio recibido]',
+        ia: 'Audio procesado correctamente'
+      },
+      'imagen': {
+        usuario: '[Imagen recibida]',
+        ia: 'Imagen recibida correctamente'
+      },
+      'video': {
+        usuario: '[Video recibido]',
+        ia: 'Video recibido correctamente'
+      },
+      'texto': {
+        usuario: '',
+        ia: ''
+      }
+    };
+
+    // Obtener mensajes por defecto según el tipo
+    const defaults = mensajesPorDefecto[tipo_medio] || mensajesPorDefecto['texto'];
+
+    // Preparar datos - usar valores por defecto si vienen vacíos
+    const mensaje_usuario_raw = req.body.mensaje_usuario || '';
+    const mensaje_IA_raw = req.body.mensaje_IA || '';
+
     const conversationData = {
       usuario_numero: req.body.usuario_numero.trim(),
-      mensaje_usuario: req.body.mensaje_usuario ? req.body.mensaje_usuario.trim() : '',
-      mensaje_IA: req.body.mensaje_IA ? req.body.mensaje_IA.trim() : '',
-      tipo_medio: req.body.tipo_medio.toLowerCase(),
+      mensaje_usuario: mensaje_usuario_raw.trim() || defaults.usuario,
+      mensaje_IA: mensaje_IA_raw.trim() || defaults.ia,
+      tipo_medio: tipo_medio,
       fecha: req.body.fecha || moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
     };
 
-    console.log('📥 Intentando guardar conversación:', conversationData);
+    console.log('📥 Intentando guardar conversación:', {
+      usuario: conversationData.usuario_numero,
+      tipo: conversationData.tipo_medio,
+      tiene_texto_usuario: !!mensaje_usuario_raw.trim(),
+      tiene_texto_ia: !!mensaje_IA_raw.trim(),
+      fecha: conversationData.fecha
+    });
 
     const conversation = new Conversation(conversationData);
     await conversation.save();
@@ -36,6 +70,15 @@ const createConversation = async (req, res) => {
         success: false,
         message: 'Error de validación',
         errors: errors
+      });
+    }
+
+    // Manejar errores de MongoDB (duplicados, etc)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Registro duplicado',
+        error: error.message
       });
     }
 
