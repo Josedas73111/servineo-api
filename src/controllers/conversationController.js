@@ -3,14 +3,12 @@ const Conversation = require('../models/Conversation');
 const moment = require('moment-timezone');
 
 // ==========================================
-// 1. CREAR CONVERSACIÓN (CORREGIDO PARA IMÁGENES/VIDEO)
+// 1. CREAR CONVERSACIÓN
 // ==========================================
 const createConversation = async (req, res) => {
   try {
-    // El middleware (validation.js) ya debió normalizar 'tipo_medio' a 'texto', 'imagen', 'video' o 'audio'.
     const tipo_medio = req.body.tipo_medio; 
     
-    // Mensajes por defecto para cuando n8n envía cadenas vacías o null
     const mensajesPorDefecto = {
       'audio': { usuario: '[Audio recibido]', ia: 'Audio procesado correctamente' },
       'imagen': { usuario: '[Imagen recibida]', ia: 'Imagen recibida correctamente' },
@@ -18,48 +16,46 @@ const createConversation = async (req, res) => {
       'texto': { usuario: 'Mensaje de texto vacío', ia: '' }
     };
 
-    // Seleccionamos los defaults según el tipo de medio actual
     const defaults = mensajesPorDefecto[tipo_medio] || mensajesPorDefecto['texto'];
 
-    // Validación y limpieza de mensaje_usuario
     let mensajeUsuario = req.body.mensaje_usuario;
     if (!mensajeUsuario || typeof mensajeUsuario !== 'string' || mensajeUsuario.trim() === '') {
       mensajeUsuario = defaults.usuario;
     }
 
-    // Validación y limpieza de mensaje_IA
     let mensajeIA = req.body.mensaje_IA;
     if (!mensajeIA || typeof mensajeIA !== 'string' || mensajeIA.trim() === '') {
       mensajeIA = defaults.ia;
     }
 
-    // Construimos el objeto final
+    const ahora = moment().tz("America/La_Paz");
     const conversationData = {
       usuario_numero: req.body.usuario_numero ? req.body.usuario_numero.toString().trim() : 'Desconocido',
       mensaje_usuario: mensajeUsuario,
       mensaje_IA: mensajeIA,
       tipo_medio: tipo_medio,
-      // Usamos la fecha enviada o la actual de La Paz
-      fecha: req.body.fecha || moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
+      fecha: req.body.fecha || ahora.format('YYYY-MM-DD HH:mm:ss')
     };
 
     console.log('📥 Guardando conversación:', JSON.stringify(conversationData, null, 2));
+    console.log('🕐 Timestamp actual (La Paz):', ahora.format('YYYY-MM-DD HH:mm:ss'));
 
     const conversation = new Conversation(conversationData);
     await conversation.save();
 
-    console.log('✅ Conversación guardada ID:', conversation._id);
+    console.log('✅ Conversación guardada con ID:', conversation._id);
+    console.log('📅 Fecha almacenada:', conversation.fecha);
 
     res.status(201).json({
       success: true,
       message: 'Conversación guardada exitosamente',
-      data: conversation
+      data: conversation,
+      timestamp: ahora.format('YYYY-MM-DD HH:mm:ss')
     });
 
   } catch (error) {
     console.error('❌ Error CRÍTICO al guardar:', error);
 
-    // Error específico de Validación de Schema en MongoDB Atlas (Error 121)
     if (error.code === 121) {
       return res.status(400).json({
         success: false,
@@ -69,7 +65,6 @@ const createConversation = async (req, res) => {
       });
     }
     
-    // Errores de validación de Mongoose
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -88,11 +83,14 @@ const createConversation = async (req, res) => {
 };
 
 // ==========================================
-// 2. OBTENER HISTORIAL DE UN USUARIO
+// 2. OBTENER HISTORIAL DE UN USUARIO (CORREGIDO)
 // ==========================================
 const getUserHistory = async (req, res) => {
   try {
     const { usuario_numero } = req.params;
+    
+    console.log(`📞 Consultando historial para usuario: ${usuario_numero}`);
+    
     const { 
       startDate, 
       endDate, 
@@ -115,14 +113,28 @@ const getUserHistory = async (req, res) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    console.log('🔍 Filtros aplicados:', JSON.stringify(filter, null, 2));
+    console.log(`📄 Paginación: página ${page}, límite ${limit}, saltar ${skip}`);
+    console.log(`📊 Orden: ${sortOrder === 'asc' ? 'Ascendente' : 'Descendente'} por _id`);
 
+    // CRÍTICO: Ordenar por _id (más confiable que fecha string)
     const conversations = await Conversation.find(filter)
-      .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
+      .sort({ _id: sortOrder === 'asc' ? 1 : -1 })
       .limit(parseInt(limit))
       .skip(skip)
       .lean();
 
     const total = await Conversation.countDocuments(filter);
+    
+    console.log(`✅ Encontradas ${conversations.length} conversaciones de un total de ${total}`);
+    
+    if (conversations.length > 0) {
+      console.log('📋 Últimas 3 conversaciones:');
+      conversations.slice(0, 3).forEach((conv, idx) => {
+        console.log(`  ${idx + 1}. ${conv.fecha} | ${conv.tipo_medio} | ${conv.mensaje_usuario.substring(0, 50)}...`);
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -132,14 +144,22 @@ const getUserHistory = async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         pages: Math.ceil(total / parseInt(limit))
+      },
+      debug: {
+        timestamp: moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss'),
+        timezone: 'America/La_Paz',
+        sortedBy: '_id',
+        sortOrder: sortOrder
       }
     });
+    
   } catch (error) {
     console.error('❌ Error al obtener historial:', error);
     res.status(500).json({
       success: false,
       message: 'Error al obtener el historial',
-      error: error.message
+      error: error.message,
+      timestamp: moment().tz("America/La_Paz").format('YYYY-MM-DD HH:mm:ss')
     });
   }
 };
@@ -173,7 +193,7 @@ const getAllConversations = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const conversations = await Conversation.find(filter)
-      .sort({ fecha: sortOrder === 'asc' ? 1 : -1 })
+      .sort({ _id: sortOrder === 'asc' ? 1 : -1 })
       .limit(parseInt(limit))
       .skip(skip)
       .lean();
@@ -222,7 +242,7 @@ const getStats = async (req, res) => {
     const total = await Conversation.countDocuments(filter);
 
     const lastConversation = await Conversation.findOne(filter)
-      .sort({ fecha: -1 })
+      .sort({ _id: -1 })
       .lean();
 
     res.status(200).json({
